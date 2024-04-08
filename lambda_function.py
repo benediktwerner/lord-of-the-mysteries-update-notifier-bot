@@ -4,9 +4,10 @@ import os
 import re
 import requests
 
-LOTM_CHAPTER_URL = (
+LOTM_CHAPTER_URL_LIGHT_NOVEL_PUB = (
     "https://www.lightnovelpub.com/novel/circle-of-inevitability-1513/chapter-{}"
 )
+LOTM_CHAPTERS_URL_NOVEL_BIN = "https://novelbin.com/ajax/chapter-archive?novelId=lord-of-mysteries-2-circle-of-inevitability"
 HUNDREDTH_REGRESSOR_CHAPTERS_URL = "https://translatinotaku.net/novel/the-100th-regression-of-the-max-level-player/ajax/chapters/"
 TABLE_NAME = "lotm-update-notifier"
 LOTM_STATE_KEY = {"id": {"S": "state"}}
@@ -62,9 +63,13 @@ class LotmHandler(Handler):
         super().__init__("LOTM", LOTM_STATE_KEY)
 
     def check(self):
+        self.check_lightnovelpub()
+        self.check_novelbin()
+
+    def check_lightnovelpub(self):
         next_chapter = self.get_int(NEXT_CHAPTER_KEY)
         self.log(f"Checking whether chapter {next_chapter} was released")
-        resp = scrapper.get(LOTM_CHAPTER_URL.format(next_chapter))
+        resp = scrapper.get(LOTM_CHAPTER_URL_LIGHT_NOVEL_PUB.format(next_chapter))
 
         if resp.status_code == 404:
             self.log(f"Chapter {next_chapter} wasn't released yet")
@@ -80,7 +85,7 @@ class LotmHandler(Handler):
         next_chapter += 1
         for next_chapter in range(next_chapter, next_chapter + 10):
             self.log(f"Follow up: Checking whether chapter {next_chapter} was released")
-            resp = scrapper.get(LOTM_CHAPTER_URL.format(next_chapter))
+            resp = scrapper.get(LOTM_CHAPTER_URL_LIGHT_NOVEL_PUB.format(next_chapter))
             if resp.status_code == 404:
                 self.log(f"Chapter {next_chapter} wasn't released yet")
                 break
@@ -96,7 +101,35 @@ class LotmHandler(Handler):
         self.set_int(NEXT_CHAPTER_KEY, next_chapter)
 
         count = next_chapter - released_chapter
-        url = LOTM_CHAPTER_URL.format(released_chapter)
+        url = LOTM_CHAPTER_URL_LIGHT_NOVEL_PUB.format(released_chapter)
+
+        self.send_to_all(count, url)
+
+    def check_novelbin(self):
+        next_chapter = self.get_int(NEXT_CHAPTER_KEY)
+        self.log(f"Checking whether chapter {next_chapter} was released")
+        resp = scrapper.get(LOTM_CHAPTERS_URL_NOVEL_BIN)
+
+        if resp.status_code != 200:
+            self.log(f"Unexpected status code: {resp.status_code}. Body: {resp.text}")
+            return
+
+        chapter_urls = re.findall(r'href="(http[^"]+)"', resp.text)
+
+        if len(chapter_urls) < next_chapter - 1:
+            self.log("Fewer chapters than expected:", len(chapter_urls))
+            self.log(chapter_urls)
+            return
+        elif len(chapter_urls) < next_chapter:
+            self.log("No new chapters")
+            return
+
+        count = len(chapter_urls) - next_chapter + 1
+        print(f"{count} new chapters")
+
+        self.set_int(NEXT_CHAPTER_KEY, len(chapter_urls) + 1)
+
+        url = chapter_urls[next_chapter - 1]
 
         self.send_to_all(count, url)
 
