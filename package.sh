@@ -1,5 +1,3 @@
 #!/bin/sh
-cd dependencies
-zip -r ../deployment.zip .
-cd ..
+zip -r dependencies-layer.zip python
 zip deployment.zip lambda_function.py
