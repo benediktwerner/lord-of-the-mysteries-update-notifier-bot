@@ -52,6 +52,9 @@ class Handler:
                 json={
                     "chat_id": chat_id,
                     "text": f"{self.name}: {count} new {'chapter was' if count == 1 else 'chapters were'} released: {url}",
+                    "link_preview_options": {
+                        "is_disabled": True,
+                    },
                 },
             )
             if resp.status_code != 200:
