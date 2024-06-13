@@ -3,6 +3,7 @@ import cloudscraper
 import os
 import re
 import requests
+import time
 
 LOTM_CHAPTER_URL_LIGHT_NOVEL_PUB = (
     "https://www.lightnovelpub.com/novel/circle-of-inevitability-1513/chapter-{}"
@@ -13,6 +14,9 @@ TABLE_NAME = "lotm-update-notifier"
 LOTM_STATE_KEY = {"id": {"S": "state"}}
 HUNDREDTH_REGRESSOR_STATE_KEY = {"id": {"S": "hundredth-regressor-state"}}
 NEXT_CHAPTER_KEY = "next_chapter"
+NOVELBIN_BANNED_UNTIL_KEY = "novelbin_banned_until"
+NOVELBIN_BANNED_COUNT_KEY = "novelbin_banned_count"
+MAX_BANNED_COUNT = 7
 
 BOT_KEY = os.environ["BOT_KEY"]
 
@@ -109,13 +113,25 @@ class LotmHandler(Handler):
         self.send_to_all(count, url)
 
     def check_novelbin(self):
+        now = int(time.time())
+        if self.get_int(NOVELBIN_BANNED_UNTIL_KEY) > now:
+            self.log("Novelbin is still banned")
+            return
+
         next_chapter = self.get_int(NEXT_CHAPTER_KEY)
         self.log(f"Checking whether chapter {next_chapter} was released")
         resp = scrapper.get(LOTM_CHAPTERS_URL_NOVEL_BIN)
 
         if resp.status_code != 200:
             self.log(f"Unexpected status code: {resp.status_code}. Body: {resp.text}")
+            if resp.status_code == 403:
+                count = self.get_int(NOVELBIN_BANNED_COUNT_KEY)
+                new_count = max(count + 1, MAX_BANNED_COUNT)
+                self.set_int(NOVELBIN_BANNED_UNTIL_KEY, now + 24 * 60 * 60 * new_count)
+                self.set_int(NOVELBIN_BANNED_COUNT_KEY, new_count)
             return
+        elif self.get_int(NOVELBIN_BANNED_COUNT_KEY) != 0:
+            self.set_int(NOVELBIN_BANNED_COUNT_KEY, 0)
 
         chapter_urls = re.findall(r'href="(http[^"]+)"', resp.text)
 
