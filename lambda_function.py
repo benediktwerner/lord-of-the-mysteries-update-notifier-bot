@@ -3,20 +3,11 @@ import cloudscraper
 import os
 import re
 import requests
-import time
 
-LOTM_CHAPTER_URL_LIGHT_NOVEL_PUB = (
-    "https://www.lightnovelpub.com/novel/circle-of-inevitability-1513/chapter-{}"
-)
-LOTM_CHAPTERS_URL_NOVEL_BIN = "https://novelbin.com/ajax/chapter-archive?novelId=lord-of-mysteries-2-circle-of-inevitability"
 HUNDREDTH_REGRESSOR_CHAPTERS_URL = "https://translatinotaku.net/novel/the-100th-regression-of-the-max-level-player/ajax/chapters/"
 TABLE_NAME = "lotm-update-notifier"
-LOTM_STATE_KEY = {"id": {"S": "state"}}
 HUNDREDTH_REGRESSOR_STATE_KEY = {"id": {"S": "hundredth-regressor-state"}}
 NEXT_CHAPTER_KEY = "next_chapter"
-NOVELBIN_BANNED_UNTIL_KEY = "novelbin_banned_until"
-NOVELBIN_BANNED_COUNT_KEY = "novelbin_banned_count"
-MAX_BANNED_COUNT = 7
 
 BOT_KEY = os.environ["BOT_KEY"]
 
@@ -65,94 +56,6 @@ class Handler:
                 self.log(f"Error: {resp.status_code} {resp.text}")
 
 
-class LotmHandler(Handler):
-    def __init__(self):
-        super().__init__("LOTM", LOTM_STATE_KEY)
-
-    def check(self):
-        self.check_lightnovelpub()
-        self.check_novelbin()
-
-    def check_lightnovelpub(self):
-        next_chapter = self.get_int(NEXT_CHAPTER_KEY)
-        self.log(f"Checking whether chapter {next_chapter} was released")
-        resp = scrapper.get(LOTM_CHAPTER_URL_LIGHT_NOVEL_PUB.format(next_chapter))
-
-        if resp.status_code == 404:
-            self.log(f"Chapter {next_chapter} wasn't released yet")
-            return
-
-        if resp.status_code != 200:
-            self.log(f"Unexpected status code: {resp.status_code}. Body: {resp.text}")
-            return
-
-        self.log(f"Chapter {next_chapter} was released")
-
-        released_chapter = next_chapter
-        next_chapter += 1
-        for next_chapter in range(next_chapter, next_chapter + 10):
-            self.log(f"Follow up: Checking whether chapter {next_chapter} was released")
-            resp = scrapper.get(LOTM_CHAPTER_URL_LIGHT_NOVEL_PUB.format(next_chapter))
-            if resp.status_code == 404:
-                self.log(f"Chapter {next_chapter} wasn't released yet")
-                break
-            if resp.status_code != 200:
-                self.log(
-                    f"Unexpected status code: {resp.status_code}. Body: {resp.text}"
-                )
-                break
-        else:
-            # All 10 next chapters were released
-            next_chapter += 1
-
-        self.set_int(NEXT_CHAPTER_KEY, next_chapter)
-
-        count = next_chapter - released_chapter
-        url = LOTM_CHAPTER_URL_LIGHT_NOVEL_PUB.format(released_chapter)
-
-        self.send_to_all(count, url)
-
-    def check_novelbin(self):
-        now = int(time.time())
-        if self.get_int(NOVELBIN_BANNED_UNTIL_KEY) > now:
-            self.log("Novelbin is still banned")
-            return
-
-        next_chapter = self.get_int(NEXT_CHAPTER_KEY)
-        self.log(f"Checking whether chapter {next_chapter} was released")
-        resp = scrapper.get(LOTM_CHAPTERS_URL_NOVEL_BIN)
-
-        if resp.status_code != 200:
-            self.log(f"Unexpected status code: {resp.status_code}. Body: {resp.text}")
-            if resp.status_code == 403:
-                count = self.get_int(NOVELBIN_BANNED_COUNT_KEY)
-                new_count = min(count + 1, MAX_BANNED_COUNT)
-                self.set_int(NOVELBIN_BANNED_UNTIL_KEY, now + 24 * 60 * 60 * new_count)
-                self.set_int(NOVELBIN_BANNED_COUNT_KEY, new_count)
-            return
-        elif self.get_int(NOVELBIN_BANNED_COUNT_KEY) != 0:
-            self.set_int(NOVELBIN_BANNED_COUNT_KEY, 0)
-
-        chapter_urls = re.findall(r'href="(http[^"]+)"', resp.text)
-
-        if len(chapter_urls) < next_chapter - 1:
-            self.log("Fewer chapters than expected:", len(chapter_urls))
-            self.log(chapter_urls)
-            return
-        elif len(chapter_urls) < next_chapter:
-            self.log("No new chapters")
-            return
-
-        count = len(chapter_urls) - next_chapter + 1
-        print(f"{count} new chapters")
-
-        self.set_int(NEXT_CHAPTER_KEY, len(chapter_urls) + 1)
-
-        url = chapter_urls[next_chapter - 1]
-
-        self.send_to_all(count, url)
-
-
 class HundredthRegressorHandler(Handler):
     def __init__(self):
         super().__init__("100th", HUNDREDTH_REGRESSOR_STATE_KEY)
@@ -187,5 +90,4 @@ class HundredthRegressorHandler(Handler):
 
 
 def lambda_handler(event, context):
-    LotmHandler().check()
     HundredthRegressorHandler().check()
