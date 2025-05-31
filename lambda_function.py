@@ -126,7 +126,7 @@ class LotmHandler(Handler):
             self.log(f"Unexpected status code: {resp.status_code}. Body: {resp.text}")
             if resp.status_code == 403:
                 count = self.get_int(NOVELBIN_BANNED_COUNT_KEY)
-                new_count = max(count + 1, MAX_BANNED_COUNT)
+                new_count = min(count + 1, MAX_BANNED_COUNT)
                 self.set_int(NOVELBIN_BANNED_UNTIL_KEY, now + 24 * 60 * 60 * new_count)
                 self.set_int(NOVELBIN_BANNED_COUNT_KEY, new_count)
             return
